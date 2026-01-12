@@ -1,0 +1,212 @@
+Push to a Registry
+If you want Kubernetes to pull the image from a registry:
+
+docker tag briitz/test-app:latest dockerhub_username/test-app:latest
+
+docker push dockerhub_username/test-app:latest
+
+3. Update your Kubernetes manifest to reference `dockerhub_username/test-app:latest`.
+
+
+
+Phase 1.
+
+# K8s Core Configs - Testing & Deployment Guide
+
+## Prerequisites
+
+**Required:**
+- kubectl installed (`kubectl version --client`)
+- Docker installed (for building images)
+- Kubernetes cluster access (minikube, EKS, GKE, or AKS)
+
+**Optional:**
+- k9s (better cluster management UI)
+- helm (for installing dependencies)
+
+---
+
+## Quick Start - Local Testing with Minikube
+
+### 1. Install Minikube
+```bash
+# macOS
+brew install minikube
+
+# Linux
+curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+sudo install minikube-linux-amd64 /usr/local/bin/minikube
+
+
+
+
+
+
+# Expected output:
+# NAME                         READY   STATUS    RESTARTS   AGE
+# pod/myapp-xxxxxxxxxx-xxxxx   1/1     Running   0          30s
+# pod/myapp-xxxxxxxxxx-xxxxx   1/1     Running   0          30s
+# pod/myapp-xxxxxxxxxx-xxxxx   1/1     Running   0          30s
+
+# Check deployment details
+kubectl describe deployment myapp -n myapp-dev
+
+# Check pod logs
+kubectl logs -f deployment/myapp -n myapp-dev
+
+# Check HPA status
+kubectl get hpa -n myapp-dev
+```
+
+### 3. Test the Application
+```bash
+# Port forward to access locally
+kubectl port-forward service/myapp 8080:80 -n myapp-dev
+
+# In another terminal, test endpoints
+curl http://localhost:8080/health
+curl http://localhost:8080/ready
+curl http://localhost:8080/
+
+# Or get the LoadBalancer IP (if using minikube)
+minikube service myapp-loadbalancer -n myapp-dev --url
+```
+
+---
+
+## Production Readiness Checklist
+
+### ✅ Before Going to Production
+
+**1. Resource Limits Set**
+```bash
+kubectl describe deployment myapp -n myapp-dev | grep -A 5 Limits
+# Should show CPU and memory limits
+```
+
+**2. Health Checks Working**
+```bash
+kubectl get pods -n myapp-dev
+# All pods should be READY 1/1
+
+kubectl describe pod <pod-name> -n myapp-dev | grep -A 10 Liveness
+# Should show successful probe results
+```
+
+**3. HPA Functioning**
+```bash
+kubectl get hpa -n myapp-dev
+# Should show current CPU/memory metrics
+
+# Load test to trigger autoscaling
+kubectl run -it --rm load-generator --image=busybox -- /bin/sh
+# Inside container:
+while true; do wget -q -O- http://myapp.myapp-dev.svc.cluster.local; done
+```
+
+**4. Secrets Properly Encoded**
+```bash
+# Verify secrets exist but values are hidden
+kubectl get secret myapp-secret -n myapp-dev
+kubectl describe secret myapp-secret -n myapp-dev
+# Should NOT show actual values
+
+# Decode to verify (for testing only)
+kubectl get secret myapp-secret -n myapp-dev -o jsonpath='{.data.DB_PASSWORD}' | base64 -d
+```
+
+**5. Rolling Updates Work**
+```bash
+# Update image version
+kubectl set image deployment/myapp myapp=myapp:v2 -n myapp-dev
+
+# Watch rollout
+kubectl rollout status deployment/myapp -n myapp-dev
+
+# Check history
+kubectl rollout history deployment/myapp -n myapp-dev
+
+# Rollback if needed
+kubectl rollout undo deployment/myapp -n myapp-dev
+```
+
+---
+
+## Multi-Environment Setup
+
+### Deploy to Staging
+```bash
+# Update namespace in all YAML files from myapp-dev to myapp-staging
+# Or use kustomize overlays (recommended)
+
+kubectl apply -f namespaces.yaml
+# Then apply other configs with updated namespace
+```
+
+### Deploy to Production
+```bash
+# Critical changes for prod:
+# 1. Increase replicas: 5-10+ in deployment.yaml
+# 2. Adjust HPA: minReplicas: 5, maxReplicas: 50
+# 3. Stricter resource limits
+# 4. Update ConfigMap environment values
+# 5. Use production secrets
+# 6. Update ingress domain names
+
+kubectl apply -f <all-configs> --namespace=myapp-prod
+```
+
+---
+
+## Troubleshooting
+
+### Pods Not Starting
+```bash
+kubectl get pods -n myapp-dev
+kubectl describe pod <pod-name> -n myapp-dev
+kubectl logs <pod-name> -n myapp-dev
+```
+
+### Common Issues:
+- **ImagePullBackOff**: Image not found or auth issue
+- **CrashLoopBackOff**: App crashing, check logs
+- **Pending**: Resource constraints, check `kubectl describe node`
+
+### HPA Not Scaling
+```bash
+# Check metrics server
+kubectl top nodes
+kubectl top pods -n myapp-dev
+
+# If no metrics, install metrics-server
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+```
+
+### Service Not Accessible
+```bash
+# Check service
+kubectl get svc -n myapp-dev
+kubectl describe svc myapp -n myapp-dev
+
+# Check endpoints
+kubectl get endpoints myapp -n myapp-dev
+# Should list pod IPs
+
+# Test from within cluster
+kubectl run -it --rm debug --image=busybox --restart=Never -- wget -O- http://myapp.myapp-dev.svc.cluster.local
+```
+
+---
+
+## Cleanup
+
+```bash
+# Delete all resources in namespace
+kubectl delete namespace myapp-dev
+
+# Or delete individually
+kubectl delete -f deployment.yaml
+kubectl delete -f service.yaml
+kubectl delete -f hpa.yaml
+kubectl delete -f configmap.yaml
+kubectl delete -f secret.yaml

@@ -1,0 +1,43 @@
+# configmap.yaml
+# Store non-sensitive configuration data
+# Usage: Apply per environment by changing namespace
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: myapp-config
+  namespace: myapp-dev  # Change to myapp-staging or myapp-prod
+  labels:
+    app: myapp
+    environment: dev
+data:
+  # Application settings
+  NODE_ENV: "development"
+  LOG_LEVEL: "debug"
+  API_VERSION: "v1"
+  
+  # Feature flags
+  ENABLE_DEBUG_MODE: "true"
+  ENABLE_METRICS: "true"
+  
+  # External service URLs (non-sensitive)
+  API_BASE_URL: "http://api.myapp-dev.svc.cluster.local:3000"
+  
+  # Database connection (non-sensitive parts)
+  DB_HOST: "postgres.myapp-dev.svc.cluster.local"
+  DB_PORT: "5432"
+  DB_NAME: "myapp_dev"
+  
+  # App configuration file (optional)
+  app.json: |
+    {
+      "server": {
+        "port": 3000,
+        "timeout": 30000
+      },
+      "cors": {
+        "enabled": true,
+        "origins": ["http://localhost:3000"]
+      }
+    }
